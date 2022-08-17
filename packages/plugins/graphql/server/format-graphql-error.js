@@ -1,13 +1,8 @@
 'use strict';
 
 const { toUpper, snakeCase, pick, isEmpty } = require('lodash/fp');
-const {
-  HttpError,
-  ForbiddenError,
-  UnauthorizedError,
-  ApplicationError,
-  ValidationError,
-} = require('@strapi/utils').errors;
+const { HttpError, ForbiddenError, UnauthorizedError, ApplicationError, ValidationError } =
+  require('@strapi/utils').errors;
 const {
   ApolloError,
   UserInputError: ApolloUserInputError,
@@ -15,10 +10,10 @@ const {
 } = require('apollo-server-koa');
 const { GraphQLError } = require('graphql');
 
-const formatToCode = name => `STRAPI_${toUpper(snakeCase(name))}`;
-const formatErrorToExtension = error => ({ error: pick(['name', 'message', 'details'])(error) });
+const formatToCode = (name) => `STRAPI_${toUpper(snakeCase(name))}`;
+const formatErrorToExtension = (error) => ({ error: pick(['name', 'message', 'details'])(error) });
 
-const formatGraphqlError = error => {
+const formatGraphqlError = (error) => {
   const { originalError } = error;
 
   if (isEmpty(originalError)) {
@@ -44,7 +39,7 @@ const formatGraphqlError = error => {
 
   // Internal server error
   strapi.log.error(originalError);
-  return ApolloError('Internal Server Error', 'INTERNAL_SERVER_ERROR');
+  return new ApolloError('Internal Server Error', 'INTERNAL_SERVER_ERROR');
 };
 
 module.exports = formatGraphqlError;

@@ -1,21 +1,39 @@
 'use strict';
+
 /**
  * Image manipulation functions
  */
+const fs = require('fs');
+const { join } = require('path');
 const sharp = require('sharp');
 
 const { getService } = require('../utils');
-const { bytesToKbytes } = require('../utils/file');
+const { bytesToKbytes, writableDiscardStream } = require('../utils/file');
 
-const getMetadatas = buffer =>
-  sharp(buffer)
-    .metadata()
-    .catch(() => ({})); // ignore errors
+const FORMATS_TO_PROCESS = ['jpeg', 'png', 'webp', 'tiff', 'svg', 'gif'];
+const FORMATS_TO_OPTIMIZE = ['jpeg', 'png', 'webp', 'tiff'];
 
-const getDimensions = buffer =>
-  getMetadatas(buffer)
-    .then(({ width = null, height = null }) => ({ width, height }))
-    .catch(() => ({})); // ignore errors
+const writeStreamToFile = (stream, path) =>
+  new Promise((resolve, reject) => {
+    const writeStream = fs.createWriteStream(path);
+    // Reject promise if there is an error with the provided stream
+    stream.on('error', reject);
+    stream.pipe(writeStream);
+    writeStream.on('close', resolve);
+    writeStream.on('error', reject);
+  });
+
+const getMetadata = (file) =>
+  new Promise((resolve, reject) => {
+    const pipeline = sharp();
+    pipeline.metadata().then(resolve).catch(reject);
+    file.getStream().pipe(pipeline);
+  });
+
+const getDimensions = async (file) => {
+  const { width = null, height = null } = await getMetadata(file);
+  return { width, height };
+};
 
 const THUMBNAIL_RESIZE_OPTIONS = {
   width: 245,
@@ -23,69 +41,82 @@ const THUMBNAIL_RESIZE_OPTIONS = {
   fit: 'inside',
 };
 
-const resizeTo = (buffer, options) =>
-  sharp(buffer)
-    .withMetadata()
-    .resize(options)
-    .toBuffer()
-    .catch(() => null);
+const resizeFileTo = async (file, options, { name, hash }) => {
+  const filePath = join(file.tmpWorkingDirectory, hash);
 
-const generateThumbnail = async file => {
-  if (!(await canBeProccessed(file.buffer))) {
-    return null;
-  }
+  await writeStreamToFile(file.getStream().pipe(sharp().resize(options)), filePath);
+  const newFile = {
+    name,
+    hash,
+    ext: file.ext,
+    mime: file.mime,
+    path: file.path || null,
+    getStream: () => fs.createReadStream(filePath),
+  };
 
-  const { width, height } = await getDimensions(file.buffer);
+  const { width, height, size } = await getMetadata(newFile);
 
-  if (width > THUMBNAIL_RESIZE_OPTIONS.width || height > THUMBNAIL_RESIZE_OPTIONS.height) {
-    const newBuff = await resizeTo(file.buffer, THUMBNAIL_RESIZE_OPTIONS);
+  Object.assign(newFile, { width, height, size: bytesToKbytes(size) });
+  return newFile;
+};
 
-    if (newBuff) {
-      const { width, height, size } = await getMetadatas(newBuff);
-
-      return {
-        name: `thumbnail_${file.name}`,
-        hash: `thumbnail_${file.hash}`,
-        ext: file.ext,
-        mime: file.mime,
-        width,
-        height,
-        size: bytesToKbytes(size),
-        buffer: newBuff,
-        path: file.path ? file.path : null,
-      };
-    }
+const generateThumbnail = async (file) => {
+  if (
+    file.width > THUMBNAIL_RESIZE_OPTIONS.width ||
+    file.height > THUMBNAIL_RESIZE_OPTIONS.height
+  ) {
+    const newFile = await resizeFileTo(file, THUMBNAIL_RESIZE_OPTIONS, {
+      name: `thumbnail_${file.name}`,
+      hash: `thumbnail_${file.hash}`,
+    });
+    return newFile;
   }
 
   return null;
 };
 
-const optimize = async buffer => {
+/**
+ * Optimize image by:
+ *    - auto orienting image based on EXIF data
+ *    - reduce image quality
+ *
+ */
+const optimize = async (file) => {
   const { sizeOptimization = false, autoOrientation = false } = await getService(
     'upload'
   ).getSettings();
 
-  if (!sizeOptimization || !(await canBeProccessed(buffer))) {
-    return { buffer };
+  const newFile = { ...file };
+
+  const { width, height, size, format } = await getMetadata(newFile);
+
+  if (sizeOptimization || autoOrientation) {
+    const transformer = sharp();
+    // reduce image quality
+    transformer[format]({ quality: sizeOptimization ? 80 : 100 });
+    // rotate image based on EXIF data
+    if (autoOrientation) {
+      transformer.rotate();
+    }
+    const filePath = join(file.tmpWorkingDirectory, `optimized-${file.hash}`);
+
+    await writeStreamToFile(file.getStream().pipe(transformer), filePath);
+
+    newFile.getStream = () => fs.createReadStream(filePath);
   }
 
-  const sharpInstance = autoOrientation ? sharp(buffer).rotate() : sharp(buffer);
+  const { width: newWidth, height: newHeight, size: newSize } = await getMetadata(newFile);
 
-  return sharpInstance
-    .toBuffer({ resolveWithObject: true })
-    .then(({ data, info }) => {
-      const output = buffer.length < data.length ? buffer : data;
+  if (newSize > size) {
+    // Ignore optimization if output is bigger than original
+    return { ...file, width, height, size: bytesToKbytes(size) };
+  }
 
-      return {
-        buffer: output,
-        info: {
-          width: info.width,
-          height: info.height,
-          size: bytesToKbytes(output.length),
-        },
-      };
-    })
-    .catch(() => ({ buffer }));
+  return Object.assign(newFile, {
+    width: newWidth,
+    height: newHeight,
+    size: bytesToKbytes(newSize),
+  });
 };
 
 const DEFAULT_BREAKPOINTS = {
@@ -96,70 +127,104 @@ const DEFAULT_BREAKPOINTS = {
 
 const getBreakpoints = () => strapi.config.get('plugin.upload.breakpoints', DEFAULT_BREAKPOINTS);
 
-const generateResponsiveFormats = async file => {
+const generateResponsiveFormats = async (file) => {
   const { responsiveDimensions = false } = await getService('upload').getSettings();
 
   if (!responsiveDimensions) return [];
 
-  if (!(await canBeProccessed(file.buffer))) {
-    return [];
-  }
-
-  const originalDimensions = await getDimensions(file.buffer);
+  const originalDimensions = await getDimensions(file);
 
   const breakpoints = getBreakpoints();
   return Promise.all(
-    Object.keys(breakpoints).map(key => {
+    Object.keys(breakpoints).map((key) => {
       const breakpoint = breakpoints[key];
 
       if (breakpointSmallerThan(breakpoint, originalDimensions)) {
         return generateBreakpoint(key, { file, breakpoint, originalDimensions });
       }
+
+      return undefined;
     })
   );
 };
 
 const generateBreakpoint = async (key, { file, breakpoint }) => {
-  const newBuff = await resizeTo(file.buffer, {
-    width: breakpoint,
-    height: breakpoint,
-    fit: 'inside',
-  });
-
-  if (newBuff) {
-    const { width, height, size } = await getMetadatas(newBuff);
-
-    return {
-      key,
-      file: {
-        name: `${key}_${file.name}`,
-        hash: `${key}_${file.hash}`,
-        ext: file.ext,
-        mime: file.mime,
-        width,
-        height,
-        size: bytesToKbytes(size),
-        buffer: newBuff,
-        path: file.path ? file.path : null,
-      },
-    };
-  }
+  const newFile = await resizeFileTo(
+    file,
+    {
+      width: breakpoint,
+      height: breakpoint,
+      fit: 'inside',
+    },
+    {
+      name: `${key}_${file.name}`,
+      hash: `${key}_${file.hash}`,
+    }
+  );
+  return {
+    key,
+    file: newFile,
+  };
 };
 
 const breakpointSmallerThan = (breakpoint, { width, height }) => {
   return breakpoint < width || breakpoint < height;
 };
 
-const formatsToProccess = ['jpeg', 'png', 'webp', 'tiff'];
-const canBeProccessed = async buffer => {
-  const { format } = await getMetadatas(buffer);
-  return format && formatsToProccess.includes(format);
+// TODO V5: remove isSupportedImage
+const isSupportedImage = (...args) => {
+  process.emitWarning(
+    '[deprecated] In future versions, `isSupportedImage` will be removed. Replace it with `isImage` or `isOptimizableImage` instead.'
+  );
+
+  return isOptimizableImage(...args);
+};
+
+/**
+ *  Applies a simple image transformation to see if the image is faulty/corrupted.
+ */
+const isFaultyImage = (file) =>
+  new Promise((resolve) => {
+    file
+      .getStream()
+      .pipe(sharp().rotate())
+      .on('error', () => resolve(true))
+      .pipe(writableDiscardStream())
+      .on('error', () => resolve(true))
+      .on('close', () => resolve(false));
+  });
+
+const isOptimizableImage = async (file) => {
+  let format;
+  try {
+    const metadata = await getMetadata(file);
+    format = metadata.format;
+  } catch (e) {
+    // throw when the file is not a supported image
+    return false;
+  }
+  return format && FORMATS_TO_OPTIMIZE.includes(format);
+};
+
+const isImage = async (file) => {
+  let format;
+  try {
+    const metadata = await getMetadata(file);
+    format = metadata.format;
+  } catch (e) {
+    // throw when the file is not a supported image
+    return false;
+  }
+  return format && FORMATS_TO_PROCESS.includes(format);
 };
 
 module.exports = () => ({
+  isSupportedImage,
+  isFaultyImage,
+  isOptimizableImage,
+  isImage,
   getDimensions,
   generateResponsiveFormats,
   generateThumbnail,
-  bytesToKbytes,
   optimize,
 });

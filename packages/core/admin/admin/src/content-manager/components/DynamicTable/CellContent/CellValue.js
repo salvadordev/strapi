@@ -1,14 +1,14 @@
 import PropTypes from 'prop-types';
 import { useIntl } from 'react-intl';
 import toString from 'lodash/toString';
-import { getNumberOfDecimals } from './utils/getNumberOfDecimals';
+import parseISO from 'date-fns/parseISO';
 
 const CellValue = ({ type, value }) => {
   const { formatDate, formatTime, formatNumber } = useIntl();
   let formattedValue = value;
 
   if (type === 'date') {
-    formattedValue = formatDate(value, { dateStyle: 'full' });
+    formattedValue = formatDate(parseISO(value), { dateStyle: 'full' });
   }
 
   if (type === 'datetime') {
@@ -29,11 +29,10 @@ const CellValue = ({ type, value }) => {
   }
 
   if (['float', 'decimal'].includes(type)) {
-    const numberOfDecimals = getNumberOfDecimals(value);
-
     formattedValue = formatNumber(value, {
-      minimumFractionDigits: numberOfDecimals,
-      maximumFractionDigits: numberOfDecimals,
+      // Should be kept in sync with the corresponding value
+      // in the design-system/NumberInput: https://github.com/strapi/design-system/blob/main/packages/strapi-design-system/src/NumberInput/NumberInput.js#L53
+      maximumFractionDigits: 21,
     });
   }
 

@@ -8,7 +8,7 @@ const { PUBLISHED_AT_ATTRIBUTE } = contentTypesUtils.constants;
 const NON_SORTABLES = ['component', 'json', 'media', 'richtext', 'dynamiczone'];
 const SORTABLE_RELATIONS = ['oneToOne', 'manyToOne'];
 
-const NON_LISTABLES = ['component', 'json', 'password', 'richtext', 'dynamiczone'];
+const NON_LISTABLES = ['json', 'password', 'richtext', 'dynamiczone'];
 const LISTABLE_RELATIONS = ['oneToOne', 'oneToMany', 'manyToOne', 'manyToMany'];
 
 // hidden fields are fields that are configured to be hidden from list, and edit views
@@ -89,7 +89,7 @@ const isVisible = (schema, name) => {
   return true;
 };
 
-const isPublicationField = name => {
+const isPublicationField = (name) => {
   return PUBLISHED_AT_ATTRIBUTE === name;
 };
 
@@ -108,7 +108,7 @@ const isTimestamp = (schema, name) => {
   }
 };
 
-const isRelation = attribute => attribute.type === 'relation';
+const isRelation = (attribute) => attribute.type === 'relation';
 
 const hasRelationAttribute = (schema, name) => {
   if (!_.has(schema.attributes, name)) {
@@ -147,14 +147,14 @@ const hasEditableAttribute = (schema, name) => {
   return true;
 };
 
-const findFirstStringAttribute = schema => {
-  return Object.keys(schema.attributes || {}).find(key => {
+const findFirstStringAttribute = (schema) => {
+  return Object.keys(schema.attributes || {}).find((key) => {
     const { type } = schema.attributes[key];
     return type === 'string' && key !== 'id';
   });
 };
 
-const getDefaultMainField = schema => findFirstStringAttribute(schema) || 'id';
+const getDefaultMainField = (schema) => findFirstStringAttribute(schema) || 'id';
 
 module.exports = {
   isSortable,

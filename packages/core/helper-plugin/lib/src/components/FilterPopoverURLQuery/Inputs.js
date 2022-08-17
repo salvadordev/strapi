@@ -1,5 +1,7 @@
 import React from 'react';
 import PropTypes from 'prop-types';
+import parseISO from 'date-fns/parseISO';
+import formatISO from 'date-fns/formatISO';
 import { DatePicker } from '@strapi/design-system/DatePicker';
 import { Field, FieldInput } from '@strapi/design-system/Field';
 import { NumberInput } from '@strapi/design-system/NumberInput';
@@ -31,10 +33,10 @@ const Inputs = ({ label, onChange, options, type, value }) => {
         clearLabel={formatMessage({ id: 'clearLabel', defaultMessage: 'Clear' })}
         ariaLabel={label}
         name="datepicker"
-        onChange={date => onChange(date.toISOString())}
+        onChange={(date) => onChange(formatISO(date, { representation: 'date' }))}
         onClear={() => onChange(null)}
-        selectedDate={value ? new Date(value) : null}
-        selectedDateLabel={formattedDate => `Date picker, current is ${formattedDate}`}
+        selectedDate={value ? parseISO(value) : null}
+        selectedDateLabel={(formattedDate) => `Date picker, current is ${formattedDate}`}
       />
     );
   }
@@ -45,10 +47,10 @@ const Inputs = ({ label, onChange, options, type, value }) => {
         clearLabel={formatMessage({ id: 'clearLabel', defaultMessage: 'Clear' })}
         ariaLabel={label}
         name="datetimepicker"
-        onChange={date => onChange(date.toISOString())}
+        onChange={(date) => onChange(date.toISOString())}
         onClear={() => onChange(null)}
         value={value ? new Date(value) : null}
-        selectedDateLabel={formattedDate => `Date picker, current is ${formattedDate}`}
+        selectedDateLabel={(formattedDate) => `Date picker, current is ${formattedDate}`}
       />
     );
   }
@@ -61,7 +63,7 @@ const Inputs = ({ label, onChange, options, type, value }) => {
         onChange={onChange}
         value={value}
       >
-        {options.map(optionValue => {
+        {options.map((optionValue) => {
           return (
             <Option key={optionValue} value={optionValue}>
               {optionValue}

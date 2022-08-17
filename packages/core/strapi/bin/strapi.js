@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 'use strict';
 
 // FIXME
@@ -12,18 +13,18 @@ const program = new Command();
 
 const packageJSON = require('../package.json');
 
-const checkCwdIsStrapiApp = name => {
-  let logErrorAndExit = () => {
+const checkCwdIsStrapiApp = (name) => {
+  const logErrorAndExit = () => {
     console.log(
       `You need to run ${yellow(
         `strapi ${name}`
-      )} in a Strapi project. Make sure you are in the right directory`
+      )} in a Strapi project. Make sure you are in the right directory.`
     );
     process.exit(1);
   };
 
   try {
-    const pkgJSON = require(process.cwd() + '/package.json');
+    const pkgJSON = require(`${process.cwd()}/package.json`);
     if (!_.has(pkgJSON, 'dependencies.@strapi/strapi')) {
       logErrorAndExit(name);
     }
@@ -32,30 +33,32 @@ const checkCwdIsStrapiApp = name => {
   }
 };
 
-const getLocalScript = name => (...args) => {
-  checkCwdIsStrapiApp(name);
+const getLocalScript =
+  (name) =>
+  (...args) => {
+    checkCwdIsStrapiApp(name);
 
-  const cmdPath = resolveCwd.silent(`@strapi/strapi/lib/commands/${name}`);
-  if (!cmdPath) {
-    console.log(
-      `Error loading the local ${yellow(
-        name
-      )} command. Strapi might not be installed in your "node_modules". You may need to run "npm install"`
-    );
-    process.exit(1);
-  }
-
-  const script = require(cmdPath);
-
-  Promise.resolve()
-    .then(() => {
-      return script(...args);
-    })
-    .catch(error => {
-      console.error(error);
+    const cmdPath = resolveCwd.silent(`@strapi/strapi/lib/commands/${name}`);
+    if (!cmdPath) {
+      console.log(
+        `Error loading the local ${yellow(
+          name
+        )} command. Strapi might not be installed in your "node_modules". You may need to run "yarn install".`
+      );
       process.exit(1);
-    });
-};
+    }
+
+    const script = require(cmdPath);
+
+    Promise.resolve()
+      .then(() => {
+        return script(...args);
+      })
+      .catch((error) => {
+        console.error(error);
+        process.exit(1);
+      });
+  };
 
 // Initial program setup
 program.storeOptionsAsProperties(false).allowUnknownOption(true);
@@ -67,9 +70,9 @@ program.addHelpCommand('help [command]', 'Display help for command');
 program.version(packageJSON.version, '-v, --version', 'Output the version number');
 program
   .command('version')
-  .description('Output your version of Strapi')
+  .description('Output the version of Strapi')
   .action(() => {
-    process.stdout.write(packageJSON.version + '\n');
+    process.stdout.write(`${packageJSON.version}\n`);
     process.exit(0);
   });
 
@@ -84,8 +87,8 @@ program
   .command('new <directory>')
   .option('--no-run', 'Do not start the application after it is created')
   .option('--use-npm', 'Force usage of npm instead of yarn to create the project')
-  .option('--debug', 'Display database connection error')
-  .option('--quickstart', 'Quickstart app creation')
+  .option('--debug', 'Display database connection errors')
+  .option('--quickstart', 'Create quickstart app')
   .option('--dbclient <dbclient>', 'Database client')
   .option('--dbhost <dbhost>', 'Database host')
   .option('--dbport <dbport>', 'Database port')
@@ -94,7 +97,8 @@ program
   .option('--dbpassword <dbpassword>', 'Database password')
   .option('--dbssl <dbssl>', 'Database SSL')
   .option('--dbfile <dbfile>', 'Database file path for sqlite')
-  .option('--dbforce', 'Overwrite database content if any')
+  .option('--dbforce', 'Allow overwriting existing database content')
+  .option('-ts, --typescript', 'Create a typescript project')
   .description('Create a new application')
   .action(require('../lib/commands/new'));
 
@@ -110,7 +114,7 @@ program
   .alias('dev')
   .option('--no-build', 'Disable build')
   .option('--watch-admin', 'Enable watch', false)
-  .option('--polling', 'Watching file changes in network directories', false)
+  .option('--polling', 'Watch for file changes in network directories', false)
   .option('--browser <name>', 'Open the browser', true)
   .description('Start your Strapi application in development mode')
   .action(getLocalScript('develop'));
@@ -118,7 +122,7 @@ program
 // $ strapi generate
 program
   .command('generate')
-  .description('Launch interactive API generator')
+  .description('Launch the interactive API generator')
   .action(() => {
     checkCwdIsStrapiApp('generate');
     process.argv.splice(2, 1);
@@ -133,8 +137,8 @@ program
 
 program
   .command('build')
-  .option('--no-optimization', 'Build the Administration without assets optimization')
-  .description('Builds the strapi admin app')
+  .option('--no-optimization', 'Build the admin app without optimizing assets')
+  .description('Build the strapi admin app')
   .action(getLocalScript('build'));
 
 // `$ strapi install`
@@ -154,7 +158,7 @@ program
 program
   .command('watch-admin')
   .option('--browser <name>', 'Open the browser', true)
-  .description('Starts the admin dev server')
+  .description('Start the admin development server')
   .action(getLocalScript('watchAdmin'));
 
 program
@@ -174,6 +178,16 @@ program
   .action(getLocalScript('configurationRestore'));
 
 // Admin
+program
+  .command('admin:create-user')
+  .alias('admin:create')
+  .description('Create a new admin')
+  .option('-e, --email <email>', 'Email of the new admin')
+  .option('-p, --password <password>', 'Password of the new admin')
+  .option('-f, --firstname <first name>', 'First name of the new admin')
+  .option('-l, --lastname <last name>', 'Last name of the new admin')
+  .action(getLocalScript('admin-create'));
+
 program
   .command('admin:reset-user-password')
   .alias('admin:reset-password')
@@ -216,5 +230,29 @@ program
   .command('controllers:list')
   .description('List all the application controllers')
   .action(getLocalScript('controllers/list'));
+
+//    `$ strapi opt-out-telemetry`
+program
+  .command('telemetry:disable')
+  .description('Disable anonymous telemetry and metadata sending to Strapi analytics')
+  .action(getLocalScript('opt-out-telemetry'));
+
+//    `$ strapi opt-in-telemetry`
+program
+  .command('telemetry:enable')
+  .description('Enable anonymous telemetry and metadata sending to Strapi analytics')
+  .action(getLocalScript('opt-in-telemetry'));
+
+program
+  .command('ts:generate-types')
+  .description(`Generate TypeScript typings for your schemas`)
+  .option(
+    '-o, --out-dir <outDir>',
+    'Specify a relative directory in which the schemas definitions will be generated'
+  )
+  .option('-f, --file <file>', 'Specify a filename to store the schemas definitions')
+  .option('--verbose', `Display more information about the types generation`, false)
+  .option('-s, --silent', `Run the generation silently, without any output`, false)
+  .action(getLocalScript('ts/generate-types'));
 
 program.parseAsync(process.argv);

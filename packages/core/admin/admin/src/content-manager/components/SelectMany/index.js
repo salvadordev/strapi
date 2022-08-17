@@ -2,7 +2,8 @@ import React, { memo } from 'react';
 import PropTypes from 'prop-types';
 import { useIntl } from 'react-intl';
 import isEmpty from 'lodash/isEmpty';
-import Select, { createFilter } from 'react-select';
+import { createFilter } from 'react-select';
+import { ReactSelect as Select } from '@strapi/helper-plugin';
 import { Box } from '@strapi/design-system/Box';
 import { Stack } from '@strapi/design-system/Stack';
 import { Typography } from '@strapi/design-system/Typography';
@@ -24,7 +25,6 @@ function SelectMany({
   options,
   placeholder,
   searchToPersist,
-  styles,
   targetModel,
   value,
   description,
@@ -39,14 +39,14 @@ function SelectMany({
   };
 
   return (
-    <Stack size={1}>
+    <Stack spacing={1}>
       <Select
         components={components}
         isDisabled={isDisabled}
         id={name}
         filterOption={(candidate, input) => {
           if (!isEmpty(value)) {
-            const isSelected = value.findIndex(item => item.id === candidate.value.id) !== -1;
+            const isSelected = value.findIndex((item) => item.id === candidate.value.id) !== -1;
 
             if (isSelected) {
               return false;
@@ -70,13 +70,12 @@ function SelectMany({
         onMenuOpen={onMenuOpen}
         onMenuScrollToBottom={onMenuScrollToBottom}
         placeholder={formatMessage(
-          placeholder || { id: 'components.Select.placeholder', defaultMessage: 'Select...' }
+          placeholder || { id: 'global.select', defaultMessage: 'Select...' }
         )}
-        styles={styles}
         value={[]}
       />
       <Box paddingTop={3} style={{ overflow: 'auto' }}>
-        <Stack as="ul" size={4} style={{ maxHeight: '128px', overflowX: 'hidden' }}>
+        <Stack as="ul" spacing={4} style={{ maxHeight: '128px', overflowX: 'hidden' }}>
           {value?.map((data, index) => {
             return (
               <ListItem
@@ -138,7 +137,6 @@ SelectMany.propTypes = {
     defaultMessage: PropTypes.string.isRequired,
   }),
   searchToPersist: PropTypes.string,
-  styles: PropTypes.object.isRequired,
   targetModel: PropTypes.string.isRequired,
   value: PropTypes.array,
   description: PropTypes.string,

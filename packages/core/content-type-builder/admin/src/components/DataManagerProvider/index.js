@@ -2,7 +2,6 @@ import React, { memo, useEffect, useMemo, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { get, groupBy, set, size } from 'lodash';
 import {
-  request,
   LoadingIndicatorPage,
   useTracking,
   useNotification,
@@ -10,6 +9,7 @@ import {
   useAutoReloadOverlayBlocker,
   useAppInfos,
   useRBACProvider,
+  useGuidedTour,
 } from '@strapi/helper-plugin';
 import { useIntl } from 'react-intl';
 import { useLocation, useRouteMatch, Redirect } from 'react-router-dom';
@@ -17,6 +17,7 @@ import { connect, useDispatch } from 'react-redux';
 import { compose } from 'redux';
 import DataManagerContext from '../../contexts/DataManagerContext';
 import useFormModalNavigation from '../../hooks/useFormModalNavigation';
+import axiosInstance from '../../utils/axiosInstance';
 import getTrad from '../../utils/getTrad';
 import makeUnique from '../../utils/makeUnique';
 import pluginId from '../../pluginId';
@@ -28,6 +29,7 @@ import retrieveComponentsFromSchema from './utils/retrieveComponentsFromSchema';
 import retrieveNestedComponents from './utils/retrieveNestedComponents';
 import { retrieveComponentsThatHaveComponents } from './utils/retrieveComponentsThatHaveComponents';
 import { getComponentsToPost, formatMainDataType, sortContentType } from './utils/cleanData';
+import serverRestartWatcher from './utils/serverRestartWatcher';
 import validateSchema from './utils/validateSchema';
 
 import {
@@ -63,6 +65,7 @@ const DataManagerProvider = ({
   const dispatch = useDispatch();
   const toggleNotification = useNotification();
   const { lockAppWithAutoreload, unlockAppWithAutoreload } = useAutoReloadOverlayBlocker();
+  const { setCurrentStep } = useGuidedTour();
 
   const { getPlugin } = useStrapiApp();
 
@@ -87,23 +90,23 @@ const DataManagerProvider = ({
   const currentUid = isInContentTypeView
     ? get(contentTypeMatch, 'params.uid', null)
     : get(componentMatch, 'params.componentUid', null);
-  const abortController = new AbortController();
-  const { signal } = abortController;
+
   const getDataRef = useRef();
   const endPoint = isInContentTypeView ? 'content-types' : 'components';
 
   getDataRef.current = async () => {
     try {
       const [
-        { data: componentsArray },
-        { data: contentTypesArray },
-        reservedNames,
+        {
+          data: { data: componentsArray },
+        },
+        {
+          data: { data: contentTypesArray },
+        },
+        { data: reservedNames },
       ] = await Promise.all(
-        ['components', 'content-types', 'reserved-names'].map(endPoint => {
-          return request(`/${pluginId}/${endPoint}`, {
-            method: 'GET',
-            signal,
-          });
+        ['components', 'content-types', 'reserved-names'].map((endPoint) => {
+          return axiosInstance.get(endPoint);
         })
       );
 
@@ -129,6 +132,12 @@ const DataManagerProvider = ({
 
   useEffect(() => {
     getDataRef.current();
+
+    return () => {
+      // Reload the plugin so the cycle is new again
+      dispatch({ type: RELOAD_PLUGIN });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -220,9 +229,9 @@ const DataManagerProvider = ({
     });
   };
 
-  const deleteCategory = async categoryUid => {
+  const deleteCategory = async (categoryUid) => {
     try {
-      const requestURL = `/${pluginId}/component-categories/${categoryUid}`;
+      const requestURL = `/component-categories/${categoryUid}`;
       // eslint-disable-next-line no-alert
       const userConfirm = window.confirm(
         formatMessage({
@@ -235,14 +244,15 @@ const DataManagerProvider = ({
       if (userConfirm) {
         lockAppWithAutoreload();
 
-        await request(requestURL, { method: 'DELETE' }, true);
+        await axiosInstance.delete(requestURL);
+
+        // Make sure the server has restarted
+        await serverRestartWatcher(true);
+
+        // Unlock the app
+        await unlockAppWithAutoreload();
 
         await updatePermissions();
-
-        // Reload the plugin so the cycle is new again
-        dispatch({ type: RELOAD_PLUGIN });
-        // Refetch all the data
-        getDataRef.current();
       }
     } catch (err) {
       console.error({ err });
@@ -257,7 +267,7 @@ const DataManagerProvider = ({
 
   const deleteData = async () => {
     try {
-      const requestURL = `/${pluginId}/${endPoint}/${currentUid}`;
+      const requestURL = `/${endPoint}/${currentUid}`;
       const isTemporary = get(modifiedData, [firstKeyToMainSchema, 'isTemporary'], false);
       // eslint-disable-next-line no-alert
       const userConfirm = window.confirm(
@@ -284,16 +294,16 @@ const DataManagerProvider = ({
 
         lockAppWithAutoreload();
 
-        await request(requestURL, { method: 'DELETE' }, true);
+        await axiosInstance.delete(requestURL);
 
-        // Reload the plugin so the cycle is new again
-        dispatch({ type: RELOAD_PLUGIN });
+        // Make sure the server has restarted
+        await serverRestartWatcher(true);
+
+        // Unlock the app
+        await unlockAppWithAutoreload();
 
         // Refetch the permissions
         await updatePermissions();
-
-        // Refetch all the data
-        getDataRef.current();
       }
     } catch (err) {
       console.error({ err });
@@ -308,7 +318,7 @@ const DataManagerProvider = ({
 
   const editCategory = async (categoryUid, body) => {
     try {
-      const requestURL = `/${pluginId}/component-categories/${categoryUid}`;
+      const requestURL = `/component-categories/${categoryUid}`;
 
       // Close the modal
       onCloseModal();
@@ -317,14 +327,15 @@ const DataManagerProvider = ({
       lockAppWithAutoreload();
 
       // Update the category
-      await request(requestURL, { method: 'PUT', body }, true);
+      await axiosInstance({ url: requestURL, method: 'PUT', data: body });
+
+      // Make sure the server has restarted
+      await serverRestartWatcher(true);
+
+      // Unlock the app
+      await unlockAppWithAutoreload();
 
       await updatePermissions();
-
-      // Reload the plugin so the cycle is new again
-      dispatch({ type: RELOAD_PLUGIN });
-      // Refetch all the data
-      getDataRef.current();
     } catch (err) {
       console.error({ err });
       toggleNotification({
@@ -410,7 +421,7 @@ const DataManagerProvider = ({
 
   const redirectEndpoint = useMemo(() => {
     const allowedEndpoints = Object.keys(contentTypes)
-      .filter(uid => get(contentTypes, [uid, 'schema', 'visible'], true))
+      .filter((uid) => get(contentTypes, [uid, 'schema', 'visible'], true))
       .sort();
 
     return get(allowedEndpoints, '0', 'create-content-type');
@@ -420,7 +431,7 @@ const DataManagerProvider = ({
     return <Redirect to={`/plugins/${pluginId}/content-types/${redirectEndpoint}`} />;
   }
 
-  const submitData = async additionalContentTypeData => {
+  const submitData = async (additionalContentTypeData) => {
     try {
       const isCreating = get(modifiedData, [firstKeyToMainSchema, 'isTemporary'], false);
       const body = {
@@ -467,17 +478,31 @@ const DataManagerProvider = ({
 
       const method = isCreating ? 'POST' : 'PUT';
 
-      const baseURL = `/${pluginId}/${endPoint}`;
+      const baseURL = `/${endPoint}`;
       const requestURL = isCreating ? baseURL : `${baseURL}/${currentUid}`;
 
       // Lock the app
       lockAppWithAutoreload();
 
-      await request(requestURL, { method, body }, true);
+      await axiosInstance({
+        url: requestURL,
+        method,
+        data: body,
+      });
 
-      unlockAppWithAutoreload();
+      // Make sure the server has restarted
+      await serverRestartWatcher(true);
 
-      await updatePermissions();
+      // Unlock the app
+      await unlockAppWithAutoreload();
+
+      if (
+        isCreating &&
+        (initialData.contentType?.schema.kind === 'collectionType' ||
+          initialData.contentType?.schema.kind === 'singleType')
+      ) {
+        setCurrentStep('contentTypeBuilder.success');
+      }
 
       // Submit ct tracking success
       if (isInContentTypeView) {
@@ -493,10 +518,8 @@ const DataManagerProvider = ({
         trackUsage('didSaveComponent');
       }
 
-      // Reload the plugin so the cycle is new again
-      dispatch({ type: RELOAD_PLUGIN });
-      // Refetch all the data
-      getDataRef.current();
+      // Update the app's permissions
+      await updatePermissions();
     } catch (err) {
       if (!isInContentTypeView) {
         trackUsage('didNotSaveComponent');
@@ -531,15 +554,12 @@ const DataManagerProvider = ({
         addAttribute,
         addCreatedComponentToDynamicZone,
         allComponentsCategories: retrieveSpecificInfoFromComponents(components, ['category']),
-        allComponentsIconAlreadyTaken: retrieveSpecificInfoFromComponents(components, [
-          'schema',
-          'icon',
-        ]),
         allIcons,
         changeDynamicZoneComponents,
         components,
         componentsGroupedByCategory: groupBy(components, 'category'),
-        componentsThatHaveOtherComponentInTheirAttributes: getAllComponentsThatHaveAComponentInTheirAttributes(),
+        componentsThatHaveOtherComponentInTheirAttributes:
+          getAllComponentsThatHaveAComponentInTheirAttributes(),
         contentTypes,
         createSchema,
         deleteCategory,
@@ -559,16 +579,14 @@ const DataManagerProvider = ({
         updateSchema,
       }}
     >
-      <>
-        {isLoadingForDataToBeSet ? (
-          <LoadingIndicatorPage />
-        ) : (
-          <>
-            {children}
-            {isInDevelopmentMode && <FormModal />}
-          </>
-        )}
-      </>
+      {isLoadingForDataToBeSet ? (
+        <LoadingIndicatorPage />
+      ) : (
+        <>
+          {children}
+          {isInDevelopmentMode && <FormModal />}
+        </>
+      )}
     </DataManagerContext.Provider>
   );
 };
@@ -590,9 +608,6 @@ DataManagerProvider.propTypes = {
 };
 
 const mapStateToProps = makeSelectDataManagerProvider();
-const withConnect = connect(
-  mapStateToProps,
-  null
-);
+const withConnect = connect(mapStateToProps, null);
 
 export default compose(withConnect)(memo(DataManagerProvider));

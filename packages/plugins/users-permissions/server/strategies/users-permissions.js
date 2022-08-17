@@ -9,7 +9,7 @@ const getAdvancedSettings = () => {
   return strapi.store({ type: 'plugin', name: 'users-permissions' }).get({ key: 'advanced' });
 };
 
-const authenticate = async ctx => {
+const authenticate = async (ctx) => {
   try {
     const token = await getService('jwt').getToken(ctx);
 
@@ -67,53 +67,32 @@ const authenticate = async ctx => {
 const verify = async (auth, config) => {
   const { credentials: user } = auth;
 
-  // public accesss
-  if (!user) {
-    // test against public role
-    const publicPermissions = await strapi.query('plugin::users-permissions.permission').findMany({
-      where: {
-        role: { type: 'public' },
-      },
+  if (!config.scope) {
+    if (!user) {
+      // A non authenticated user cannot access routes that do not have a scope
+      throw new UnauthorizedError();
+    } else {
+      // An authenticated user can access non scoped routes
+      return;
+    }
+  }
+
+  let { allowedActions } = auth;
+
+  if (!allowedActions) {
+    const permissions = await strapi.query('plugin::users-permissions.permission').findMany({
+      where: { role: user ? user.role.id : { type: 'public' } },
     });
 
-    const allowedActions = map('action', publicPermissions);
-
-    // A non authenticated user cannot access routes that do not have a scope
-    if (!config.scope) {
-      throw new UnauthorizedError();
-    }
-
-    const isAllowed = castArray(config.scope).every(scope => allowedActions.includes(scope));
-
-    if (!isAllowed) {
-      throw new ForbiddenError();
-    }
-
-    return;
+    allowedActions = map('action', permissions);
+    auth.allowedActions = allowedActions;
   }
 
-  const permissions = await strapi.query('plugin::users-permissions.permission').findMany({
-    where: { role: user.role.id },
-  });
-
-  const allowedActions = map('action', permissions);
-
-  // An authenticated user can access non scoped routes
-  if (!config.scope) {
-    return;
-  }
-
-  const isAllowed = castArray(config.scope).every(scope => allowedActions.includes(scope));
+  const isAllowed = castArray(config.scope).every((scope) => allowedActions.includes(scope));
 
   if (!isAllowed) {
     throw new ForbiddenError();
   }
-
-  // TODO: if we need to keep policies for u&p execution
-  // Execute the policies.
-  // if (permission.policy) {
-  //   return await strapi.plugin('users-permissions').policy(permission.policy)(ctx, next);
-  // }
 };
 
 module.exports = {

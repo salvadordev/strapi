@@ -1,27 +1,16 @@
 'use strict';
 
-const knex = require('knex');
-
 const { getDialect } = require('./dialects');
 const createSchemaProvider = require('./schema');
 const createMetadata = require('./metadata');
 const { createEntityManager } = require('./entity-manager');
 const { createMigrationsProvider } = require('./migrations');
 const { createLifecyclesProvider } = require('./lifecycles');
+const createConnection = require('./connection');
 const errors = require('./errors');
 
 // TODO: move back into strapi
 const { transformContentTypes } = require('./utils/content-types');
-
-const createConnection = config => {
-  const knexInstance = knex(config);
-
-  return Object.assign(knexInstance, {
-    getSchemaName() {
-      return this.client.connectionSettings.schema;
-    },
-  });
-};
 
 class Database {
   constructor(config) {
@@ -69,6 +58,10 @@ class Database {
     return schema ? trx.schema.withSchema(schema) : trx.schema;
   }
 
+  transaction() {
+    return this.connection.transaction();
+  }
+
   queryBuilder(uid) {
     return this.entityManager.createQueryBuilder(uid);
   }
@@ -81,7 +74,7 @@ class Database {
 
 // TODO: move into strapi
 Database.transformContentTypes = transformContentTypes;
-Database.init = async config => new Database(config);
+Database.init = async (config) => new Database(config);
 
 module.exports = {
   Database,

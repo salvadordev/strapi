@@ -1,10 +1,12 @@
+/* eslint-disable max-classes-per-file */
+
 'use strict';
 
 /**
  * Converts the standard Strapi REST query params to a more usable format for querying
  * You can read more here: https://docs.strapi.io/developer-docs/latest/developer-resources/database-apis-reference/rest-api.html#filters
  */
-const { has } = require('lodash/fp');
+const { has, isEmpty, isObject, isPlainObject, cloneDeep, get, mergeAll } = require('lodash/fp');
 const _ = require('lodash');
 const parseType = require('./parse-type');
 const contentTypesUtils = require('./content-types');
@@ -25,13 +27,13 @@ class InvalidSortError extends Error {
   }
 }
 
-const validateOrder = order => {
+const validateOrder = (order) => {
   if (!['asc', 'desc'].includes(order.toLocaleLowerCase())) {
     throw new InvalidOrderError();
   }
 };
 
-const convertCountQueryParams = countQuery => {
+const convertCountQueryParams = (countQuery) => {
   return parseType({ type: 'boolean', value: countQuery });
 };
 
@@ -39,13 +41,13 @@ const convertCountQueryParams = countQuery => {
  * Sort query parser
  * @param {string} sortQuery - ex: id:asc,price:desc
  */
-const convertSortQueryParams = sortQuery => {
+const convertSortQueryParams = (sortQuery) => {
   if (typeof sortQuery === 'string') {
-    return sortQuery.split(',').map(value => convertSingleSortQueryParam(value));
+    return sortQuery.split(',').map((value) => convertSingleSortQueryParam(value));
   }
 
   if (Array.isArray(sortQuery)) {
-    return sortQuery.flatMap(sortValue => convertSortQueryParams(sortValue));
+    return sortQuery.flatMap((sortValue) => convertSortQueryParams(sortValue));
   }
 
   if (_.isPlainObject(sortQuery)) {
@@ -55,7 +57,7 @@ const convertSortQueryParams = sortQuery => {
   throw new InvalidSortError();
 };
 
-const convertSingleSortQueryParam = sortQuery => {
+const convertSingleSortQueryParam = (sortQuery) => {
   // split field and order param with default order to ascending
   const [field, order = 'asc'] = sortQuery.split(':');
 
@@ -68,9 +70,9 @@ const convertSingleSortQueryParam = sortQuery => {
   return _.set({}, field, order);
 };
 
-const convertNestedSortQueryParam = sortQuery => {
+const convertNestedSortQueryParam = (sortQuery) => {
   const transformedSort = {};
-  for (const field in sortQuery) {
+  for (const field of Object.keys(sortQuery)) {
     const order = sortQuery[field];
 
     // this is a deep sort
@@ -89,7 +91,7 @@ const convertNestedSortQueryParam = sortQuery => {
  * Start query parser
  * @param {string} startQuery
  */
-const convertStartQueryParams = startQuery => {
+const convertStartQueryParams = (startQuery) => {
   const startAsANumber = _.toNumber(startQuery);
 
   if (!_.isInteger(startAsANumber) || startAsANumber < 0) {
@@ -103,7 +105,7 @@ const convertStartQueryParams = startQuery => {
  * Limit query parser
  * @param {string} limitQuery
  */
-const convertLimitQueryParams = limitQuery => {
+const convertLimitQueryParams = (limitQuery) => {
   const limitAsANumber = _.toNumber(limitQuery);
 
   if (!_.isInteger(limitAsANumber) || (limitAsANumber !== -1 && limitAsANumber < 0)) {
@@ -124,41 +126,91 @@ class InvalidPopulateError extends Error {
 }
 
 // NOTE: we could support foo.* or foo.bar.* etc later on
-const convertPopulateQueryParams = (populate, depth = 0) => {
+const convertPopulateQueryParams = (populate, schema, depth = 0) => {
   if (depth === 0 && populate === '*') {
     return true;
   }
 
   if (typeof populate === 'string') {
-    return populate.split(',').map(value => _.trim(value));
+    return populate.split(',').map((value) => _.trim(value));
   }
 
   if (Array.isArray(populate)) {
     // map convert
     return _.uniq(
-      populate.flatMap(value => {
+      populate.flatMap((value) => {
         if (typeof value !== 'string') {
           throw new InvalidPopulateError();
         }
 
-        return value.split(',').map(value => _.trim(value));
+        return value.split(',').map((value) => _.trim(value));
       })
     );
   }
 
   if (_.isPlainObject(populate)) {
-    const transformedPopulate = {};
-    for (const key in populate) {
-      transformedPopulate[key] = convertNestedPopulate(populate[key]);
-    }
-
-    return transformedPopulate;
+    return convertPopulateObject(populate, schema);
   }
 
   throw new InvalidPopulateError();
 };
 
-const convertNestedPopulate = subPopulate => {
+const convertPopulateObject = (populate, schema) => {
+  if (!schema) {
+    return {};
+  }
+
+  const { attributes } = schema;
+
+  return Object.entries(populate).reduce((acc, [key, subPopulate]) => {
+    const attribute = attributes[key];
+
+    if (!attribute) {
+      return acc;
+    }
+
+    // FIXME: This is a temporary solution for dynamic zones that should be
+    // fixed when we'll implement a more accurate way to query them
+    if (attribute.type === 'dynamiczone') {
+      const populates = attribute.components
+        .map((uid) => strapi.getModel(uid))
+        .map((schema) => convertNestedPopulate(subPopulate, schema));
+
+      return {
+        ...acc,
+        [key]: mergeAll(populates),
+      };
+    }
+
+    // NOTE: Retrieve the target schema UID.
+    // Only handles basic relations, medias and component since it's not possible
+    // to populate with options for a dynamic zone or a polymorphic relation
+    let targetSchemaUID;
+
+    if (attribute.type === 'relation') {
+      targetSchemaUID = attribute.target;
+    } else if (attribute.type === 'component') {
+      targetSchemaUID = attribute.component;
+    } else if (attribute.type === 'media') {
+      targetSchemaUID = 'plugin::upload.file';
+    } else {
+      return acc;
+    }
+
+    const targetSchema = strapi.getModel(targetSchemaUID);
+
+    if (!targetSchema) {
+      return acc;
+    }
+
+    return {
+      ...acc,
+      [key]: convertNestedPopulate(subPopulate, targetSchema),
+    };
+  }, {});
+};
+
+const convertNestedPopulate = (subPopulate, schema) => {
   if (subPopulate === '*') {
     return true;
   }
@@ -181,7 +233,7 @@ const convertNestedPopulate = subPopulate => {
   }
 
   if (filters) {
-    query.where = convertFiltersQueryParams(filters);
+    query.where = convertFiltersQueryParams(filters, schema);
   }
 
   if (fields) {
@@ -189,7 +241,7 @@ const convertNestedPopulate = subPopulate => {
   }
 
   if (populate) {
-    query.populate = convertPopulateQueryParams(populate);
+    query.populate = convertPopulateQueryParams(populate, schema);
   }
 
   if (count) {
@@ -205,20 +257,102 @@ const convertFieldsQueryParams = (fields, depth = 0) => {
   }
 
   if (typeof fields === 'string') {
-    const fieldsValues = fields.split(',').map(value => _.trim(value));
+    const fieldsValues = fields.split(',').map((value) => _.trim(value));
     return _.uniq(['id', ...fieldsValues]);
   }
 
   if (Array.isArray(fields)) {
     // map convert
-    const fieldsValues = fields.flatMap(value => convertFieldsQueryParams(value, depth + 1));
+    const fieldsValues = fields.flatMap((value) => convertFieldsQueryParams(value, depth + 1));
     return _.uniq(['id', ...fieldsValues]);
   }
 
   throw new Error('Invalid fields parameter. Expected a string or an array of strings');
 };
 
-const convertFiltersQueryParams = filters => filters;
+const convertFiltersQueryParams = (filters, schema) => {
+  // Filters need to be either an array or an object
+  // Here we're only checking for 'object' type since typeof [] => object and typeof {} => object
+  if (!isObject(filters)) {
+    throw new Error('The filters parameter must be an object or an array');
+  }
+
+  // Don't mutate the original object
+  const filtersCopy = cloneDeep(filters);
+
+  return convertAndSanitizeFilters(filtersCopy, schema);
+};
+
+const convertAndSanitizeFilters = (filters, schema) => {
+  if (!isPlainObject(filters)) {
+    return filters;
+  }
+
+  if (Array.isArray(filters)) {
+    return (
+      filters
+        // Sanitize each filter
+        .map((filter) => convertAndSanitizeFilters(filter, schema))
+        // Filter out empty filters
+        .filter((filter) => !isObject(filter) || !isEmpty(filter))
+    );
+  }
+
+  const removeOperator = (operator) => delete filters[operator];
+
+  // Here, `key` can either be an operator or an attribute name
+  for (const [key, value] of Object.entries(filters)) {
+    const attribute = get(key, schema.attributes);
+
+    // Handle attributes
+    if (attribute) {
+      // Relations
+      if (attribute.type === 'relation') {
+        filters[key] = convertAndSanitizeFilters(value, strapi.getModel(attribute.target));
+      }
+
+      // Components
+      else if (attribute.type === 'component') {
+        filters[key] = convertAndSanitizeFilters(value, strapi.getModel(attribute.component));
+      }
+
+      // Media
+      else if (attribute.type === 'media') {
+        filters[key] = convertAndSanitizeFilters(value, strapi.getModel('plugin::upload.file'));
+      }
+
+      // Dynamic Zones
+      else if (attribute.type === 'dynamiczone') {
+        removeOperator(key);
+      }
+
+      // Password attributes
+      else if (attribute.type === 'password') {
+        // Always remove password attributes from filters object
+        removeOperator(key);
+      }
+
+      // Scalar attributes
+      else {
+        filters[key] = convertAndSanitizeFilters(value, schema);
+      }
+    }
+
+    // Handle operators
+    else if (['$null', '$notNull'].includes(key)) {
+      filters[key] = parseType({ type: 'boolean', value: filters[key], forceCast: true });
+    } else if (isObject(value)) {
+      filters[key] = convertAndSanitizeFilters(value, schema);
+    }
+
+    // Remove empty objects & arrays
+    if (isPlainObject(filters[key]) && isEmpty(filters[key])) {
+      removeOperator(key);
+    }
+  }
+
+  return filters;
+};
 
 const convertPublicationStateParams = (type, params = {}, query = {}) => {
   if (!type) {

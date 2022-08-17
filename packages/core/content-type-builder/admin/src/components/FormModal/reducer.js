@@ -18,7 +18,7 @@ const initialState = {
 
 const reducer = (state = initialState, action) =>
   // eslint-disable-next-line consistent-return
-  produce(state, draftState => {
+  produce(state, (draftState) => {
     switch (action.type) {
       case actions.ON_CHANGE: {
         const { keys, value } = action;
@@ -266,7 +266,7 @@ const reducer = (state = initialState, action) =>
           dataToSet = options;
         } else if (attributeType === 'media') {
           dataToSet = {
-            allowedTypes: ['images', 'files', 'videos'],
+            allowedTypes: ['images', 'files', 'videos', 'audios'],
             type: 'media',
             multiple: true,
             ...options,

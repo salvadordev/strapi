@@ -6,6 +6,8 @@
 
 import React, { useState } from 'react';
 import PropTypes from 'prop-types';
+import parseISO from 'date-fns/parseISO';
+import formatISO from 'date-fns/formatISO';
 import { useIntl } from 'react-intl';
 import { Checkbox } from '@strapi/design-system/Checkbox';
 import { DatePicker } from '@strapi/design-system/DatePicker';
@@ -36,13 +38,51 @@ const GenericInput = ({
   required,
   step,
   type,
-  value,
+  value: defaultValue,
+  isNullable,
   ...rest
 }) => {
   const { formatMessage } = useIntl();
   const [showPassword, setShowPassword] = useState(false);
 
   const CustomInput = customInputs ? customInputs[type] : null;
+
+  // the API always returns null, which throws an error in React,
+  // therefore we cast this case to undefined
+  const value = defaultValue ?? undefined;
+
+  /*
+   TODO: ideally we should pass in `defaultValue` and `value` for
+   inputs, in order to make them controlled components. This variable
+   acts as a fallback for now, to prevent React errors in devopment mode
+
+   See: https://github.com/strapi/strapi/pull/12861
+  */
+  const valueWithEmptyStringFallback = value ?? '';
+
+  function getErrorMessage(error) {
+    if (!error) {
+      return null;
+    }
+
+    const values = {
+      ...error.values,
+    };
+
+    if (typeof error === 'string') {
+      return formatMessage({ id: error, defaultMessage: error }, values);
+    }
+
+    return formatMessage(
+      {
+        id: error.id,
+        defaultMessage: error?.defaultMessage ?? error.id,
+      },
+      values
+    );
+  }
+
+  const errorMessage = getErrorMessage(error);
 
   if (CustomInput) {
     return (
@@ -52,7 +92,7 @@ const GenericInput = ({
         disabled={disabled}
         intlLabel={intlLabel}
         labelAction={labelAction}
-        error={error}
+        error={errorMessage}
         name={name}
         onChange={onChange}
         options={options}
@@ -85,30 +125,45 @@ const GenericInput = ({
       )
     : '';
 
-  const errorMessage = error ? formatMessage({ id: error, defaultMessage: error }) : '';
-
   switch (type) {
     case 'bool': {
+      const clearProps = {
+        clearLabel:
+          isNullable &&
+          formatMessage({
+            id: 'app.components.ToggleCheckbox.clear-label',
+            defaultMessage: 'Clear',
+          }),
+
+        onClear:
+          isNullable &&
+          (() => {
+            onChange({ target: { name, value: null } });
+          }),
+      };
+
       return (
         <ToggleInput
-          checked={value === null ? null : value || false}
+          checked={defaultValue === null ? null : defaultValue || false}
           disabled={disabled}
           hint={hint}
           label={label}
+          error={errorMessage}
           labelAction={labelAction}
           name={name}
           offLabel={formatMessage({
             id: 'app.components.ToggleCheckbox.off-label',
-            defaultMessage: 'Off',
+            defaultMessage: 'False',
           })}
           onLabel={formatMessage({
             id: 'app.components.ToggleCheckbox.on-label',
-            defaultMessage: 'On',
+            defaultMessage: 'True',
           })}
-          onChange={e => {
+          onChange={(e) => {
             onChange({ target: { name, value: e.target.checked } });
           }}
           required={required}
+          {...clearProps}
         />
       );
     }
@@ -120,7 +175,7 @@ const GenericInput = ({
           hint={hint}
           id={name}
           name={name}
-          onValueChange={value => {
+          onValueChange={(value) => {
             onChange({ target: { name, value } });
           }}
           required={required}
@@ -141,21 +196,27 @@ const GenericInput = ({
           id={name}
           hint={hint}
           name={name}
-          onChange={date => {
+          onChange={(date) => {
             const formattedDate = date.toISOString();
 
             onChange({ target: { name, value: formattedDate, type } });
           }}
           step={step}
-          onClear={() => onChange({ target: { name, value: '', type } })}
+          onClear={() => onChange({ target: { name, value: null, type } })}
           placeholder={formattedPlaceholder}
           required={required}
-          value={value ? new Date(value) : null}
-          selectedDateLabel={formattedDate => `Date picker, current is ${formattedDate}`}
+          value={value && new Date(value)}
+          selectedDateLabel={(formattedDate) => `Date picker, current is ${formattedDate}`}
         />
       );
     }
     case 'date': {
+      let selectedDate = null;
+
+      if (value) {
+        selectedDate = parseISO(value);
+      }
+
       return (
         <DatePicker
           clearLabel={formatMessage({ id: 'clearLabel', defaultMessage: 'Clear' })}
@@ -166,16 +227,16 @@ const GenericInput = ({
           id={name}
           hint={hint}
           name={name}
-          onChange={date => {
-            const formattedDate = date.toISOString();
-
-            onChange({ target: { name, value: formattedDate, type } });
+          onChange={(date) => {
+            onChange({
+              target: { name, value: formatISO(date, { representation: 'date' }), type },
+            });
           }}
-          onClear={() => onChange({ target: { name, value: '', type } })}
+          onClear={() => onChange({ target: { name, value: null, type } })}
           placeholder={formattedPlaceholder}
           required={required}
-          selectedDate={value ? new Date(value) : null}
-          selectedDateLabel={formattedDate => `Date picker, current is ${formattedDate}`}
+          selectedDate={selectedDate}
+          selectedDateLabel={(formattedDate) => `Date picker, current is ${formattedDate}`}
         />
       );
     }
@@ -189,13 +250,11 @@ const GenericInput = ({
           id={name}
           hint={hint}
           name={name}
-          onValueChange={value => {
-            onChange({ target: { name, value, type } });
-          }}
+          onValueChange={(value) => onChange({ target: { name, value, type } })}
           placeholder={formattedPlaceholder}
           required={required}
           step={step}
-          value={value ?? undefined}
+          value={value}
         />
       );
     }
@@ -214,7 +273,7 @@ const GenericInput = ({
           placeholder={formattedPlaceholder}
           required={required}
           type="email"
-          value={value || ''}
+          value={valueWithEmptyStringFallback}
         />
       );
     }
@@ -235,7 +294,7 @@ const GenericInput = ({
           placeholder={formattedPlaceholder}
           required={required}
           type="text"
-          value={value || ''}
+          value={valueWithEmptyStringFallback}
         />
       );
     }
@@ -252,7 +311,7 @@ const GenericInput = ({
                 defaultMessage: 'Show password',
               })}
               onClick={() => {
-                setShowPassword(prev => !prev);
+                setShowPassword((prev) => !prev);
               }}
               style={{
                 border: 'none',
@@ -277,7 +336,7 @@ const GenericInput = ({
           placeholder={formattedPlaceholder}
           required={required}
           type={showPassword ? 'text' : 'password'}
-          value={value || ''}
+          value={valueWithEmptyStringFallback}
         />
       );
     }
@@ -291,12 +350,10 @@ const GenericInput = ({
           id={name}
           hint={hint}
           name={name}
-          onChange={value => {
-            onChange({ target: { name, value: value === '' ? null : value, type: 'select' } });
-          }}
+          onChange={(value) => onChange({ target: { name, value, type: 'select' } })}
           placeholder={formattedPlaceholder}
           required={required}
-          value={value || ''}
+          value={value}
         >
           {options.map(({ metadatas: { intlLabel, disabled, hidden }, key, value }) => {
             return (
@@ -322,7 +379,7 @@ const GenericInput = ({
           required={required}
           placeholder={formattedPlaceholder}
           type={type}
-          value={value || ''}
+          value={valueWithEmptyStringFallback}
         >
           {value}
         </Textarea>
@@ -349,7 +406,7 @@ const GenericInput = ({
           id={name}
           hint={hint}
           name={name}
-          onChange={time => {
+          onChange={(time) => {
             onChange({ target: { name, value: `${time}`, type } });
           }}
           onClear={() => {
@@ -383,12 +440,13 @@ GenericInput.defaultProps = {
   description: null,
   disabled: false,
   error: '',
+  isNullable: undefined,
   labelAction: undefined,
   placeholder: null,
   required: false,
   options: [],
   step: 1,
-  value: '',
+  value: undefined,
 };
 
 GenericInput.propTypes = {
@@ -400,12 +458,19 @@ GenericInput.propTypes = {
     values: PropTypes.object,
   }),
   disabled: PropTypes.bool,
-  error: PropTypes.string,
+  error: PropTypes.oneOfType([
+    PropTypes.string,
+    PropTypes.shape({
+      id: PropTypes.string.isRequired,
+      defaultMessage: PropTypes.string,
+    }),
+  ]),
   intlLabel: PropTypes.shape({
     id: PropTypes.string.isRequired,
     defaultMessage: PropTypes.string.isRequired,
     values: PropTypes.object,
   }).isRequired,
+  isNullable: PropTypes.bool,
   labelAction: PropTypes.element,
   name: PropTypes.string.isRequired,
   onChange: PropTypes.func.isRequired,

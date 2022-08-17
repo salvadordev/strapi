@@ -1,9 +1,19 @@
 'use strict';
 
-const uploadService = require('./upload');
+const provider = require('./provider');
+const upload = require('./upload');
 const imageManipulation = require('./image-manipulation');
+const folder = require('./folder');
+const file = require('./file');
+const metrics = require('./metrics');
+const apiUploadFolder = require('./api-upload-folder');
 
 module.exports = {
-  upload: uploadService,
+  provider,
+  upload,
+  folder,
+  file,
+  metrics,
   'image-manipulation': imageManipulation,
+  'api-upload-folder': apiUploadFolder,
 };

@@ -13,7 +13,7 @@
     <img src="https://img.shields.io/npm/v/@strapi/strapi/latest.svg" alt="NPM Version" />
   </a>
   <a href="https://github.com/strapi/strapi/actions/workflows/tests.yml">
-    <img src="https://github.com/strapi/strapi/actions/workflows/tests.yml/badge.svg?branch=master" alt="Tests" />
+    <img src="https://github.com/strapi/strapi/actions/workflows/tests.yml/badge.svg?branch=main" alt="Tests" />
   </a>
   <a href="https://discord.strapi.io">
     <img src="https://img.shields.io/discord/811989166782021633?label=Discord" alt="Strapi on Discord" />
@@ -114,8 +114,7 @@ For general help using Strapi, please refer to [the official Strapi documentatio
 - [Discord](https://discord.strapi.io) (For live discussion with the Community and Strapi team)
 - [GitHub](https://github.com/strapi/strapi) (Bug reports, Contributions)
 - [Community Forum](https://forum.strapi.io) (Questions and Discussions)
-- [Academy](https://academy.strapi.io) (Learn the fundamentals of Strapi)
-- [ProductBoard](https://portal.productboard.com/strapi/tabs/2-under-consideration) (Roadmap, Feature requests)
+- [Roadmap & Feature Requests](https://feedback.strapi.io/)
 - [Twitter](https://twitter.com/strapijs) (Get the news fast)
 - [Facebook](https://www.facebook.com/Strapi-616063331867161)
 - [YouTube Channel](https://www.youtube.com/strapi) (Learn from Video Tutorials)
@@ -126,7 +125,7 @@ Follow our [migration guides](https://docs.strapi.io/developer-docs/latest/updat
 
 ## Roadmap
 
-Check out our [roadmap](https://portal.productboard.com/strapi) to get informed of the latest features released and the upcoming ones. You may also give us insights and vote for a specific feature.
+Check out our [roadmap](https://feedback.strapi.io/) to get informed of the latest features released and the upcoming ones. You may also give us insights and vote for a specific feature.
 
 ## Documentation
 

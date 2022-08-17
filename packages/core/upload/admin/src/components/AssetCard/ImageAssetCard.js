@@ -16,6 +16,7 @@ import {
 } from '@strapi/design-system/Card';
 import { IconButton } from '@strapi/design-system/IconButton';
 import Pencil from '@strapi/icons/Pencil';
+import Trash from '@strapi/icons/Trash';
 import { useIntl } from 'react-intl';
 import { getTrad } from '../../utils';
 
@@ -32,6 +33,7 @@ export const ImageAssetCard = ({
   selected,
   onSelect,
   onEdit,
+  onRemove,
   size,
   alt,
 }) => {
@@ -43,16 +45,29 @@ export const ImageAssetCard = ({
     width && height ? `${thumbnail}?width=${width}&height=${height}` : thumbnail;
 
   return (
-    <Card>
+    <Card height="100%">
       <CardHeader>
         {onSelect && <CardCheckbox value={selected} onValueChange={onSelect} />}
-        {onEdit && (
+        {(onRemove || onEdit) && (
           <CardAction position="end">
-            <IconButton
-              label={formatMessage({ id: getTrad('control-card.edit'), defaultMessage: 'Edit' })}
-              icon={<Pencil />}
-              onClick={onEdit}
-            />
+            {onRemove && (
+              <IconButton
+                label={formatMessage({
+                  id: getTrad('control-card.remove-selection'),
+                  defaultMessage: 'Remove from selection',
+                })}
+                icon={<Trash />}
+                onClick={onRemove}
+              />
+            )}
+
+            {onEdit && (
+              <IconButton
+                label={formatMessage({ id: getTrad('control-card.edit'), defaultMessage: 'Edit' })}
+                icon={<Pencil />}
+                onClick={onEdit}
+              />
+            )}
           </CardAction>
         )}
         <CardAsset src={optimizedCachingThumbnail} size={size} alt={alt} />
@@ -64,7 +79,7 @@ export const ImageAssetCard = ({
           </Box>
           <CardSubtitle>
             <Extension>{extension}</Extension>
-            {height && width && ` - ${height}✕${width}`}
+            {height && width && ` - ${width}✕${height}`}
           </CardSubtitle>
         </CardContent>
         <CardBadge>
@@ -81,6 +96,7 @@ ImageAssetCard.defaultProps = {
   selected: false,
   onEdit: undefined,
   onSelect: undefined,
+  onRemove: undefined,
   size: 'M',
 };
 
@@ -91,6 +107,7 @@ ImageAssetCard.propTypes = {
   name: PropTypes.string.isRequired,
   onEdit: PropTypes.func,
   onSelect: PropTypes.func,
+  onRemove: PropTypes.func,
   width: PropTypes.number,
   thumbnail: PropTypes.string.isRequired,
   selected: PropTypes.bool,

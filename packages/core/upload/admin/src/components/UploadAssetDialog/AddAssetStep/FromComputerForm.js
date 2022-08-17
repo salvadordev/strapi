@@ -41,10 +41,18 @@ export const FromComputerForm = ({ onClose, onAddAssets, trackedLocation }) => {
   const inputRef = useRef(null);
   const { trackUsage } = useTracking();
 
-  const handleDragEnter = () => setDragOver(true);
+  const handleDragOver = (event) => {
+    event.preventDefault();
+  };
+
+  const handleDragEnter = (event) => {
+    event.preventDefault();
+    setDragOver(true);
+  };
+
   const handleDragLeave = () => setDragOver(false);
 
-  const handleClick = e => {
+  const handleClick = (e) => {
     e.preventDefault();
     inputRef.current.click();
   };
@@ -67,6 +75,26 @@ export const FromComputerForm = ({ onClose, onAddAssets, trackedLocation }) => {
     onAddAssets(assets);
   };
 
+  const handleDrop = (e) => {
+    e.preventDefault();
+
+    if (e?.dataTransfer?.files) {
+      const files = e.dataTransfer.files;
+      const assets = [];
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files.item(i);
+        const asset = rawFileToAsset(file, AssetSource.Computer);
+
+        assets.push(asset);
+      }
+
+      onAddAssets(assets);
+    }
+
+    setDragOver(false);
+  };
+
   return (
     <form>
       <Box paddingLeft={8} paddingRight={8} paddingTop={6} paddingBottom={6}>
@@ -81,6 +109,8 @@ export const FromComputerForm = ({ onClose, onAddAssets, trackedLocation }) => {
             position="relative"
             onDragEnter={handleDragEnter}
             onDragLeave={handleDragLeave}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
           >
             <Flex justifyContent="center">
               <Wrapper>

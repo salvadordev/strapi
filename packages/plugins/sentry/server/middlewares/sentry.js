@@ -18,8 +18,8 @@ module.exports = ({ strapi }) => {
     try {
       await next();
     } catch (error) {
-      sentry.sendError(error, (scope, sentryInstance) => {
-        scope.addEventProcessor(event => {
+      sentryService.sendError(error, (scope, sentryInstance) => {
+        scope.addEventProcessor((event) => {
           // Parse Koa context to add error metadata
           return sentryInstance.Handlers.parseRequest(event, ctx.request, {
             // Don't parse the transaction name, we'll do it manually
@@ -28,7 +28,7 @@ module.exports = ({ strapi }) => {
         });
 
         // Manually add transaction name
-        scope.setTag('transaction', `${ctx.method} ${ctx.request.url}`);
+        scope.setTag('transaction', `${ctx.method} ${ctx._matchedRoute}`);
         // Manually add Strapi version
         scope.setTag('strapi_version', strapi.config.info.strapi);
         scope.setTag('method', ctx.method);
